@@ -4,6 +4,7 @@
 
 import json, socket, threading, time
 from picarx import Picarx
+from vilib import Vilib
 
 HOST = "0.0.0.0"
 PORT = 5555
@@ -108,7 +109,12 @@ def handle(conn, addr):
         conn.close()
 
 def main():
+    
     print(f"TCP control server on {HOST}:{PORT}")
+
+    Vilib.camera_start(vflip=False,hflip=False)
+    Vilib.display(local=True,web=True)
+    
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         s.bind((HOST, PORT))

@@ -28,16 +28,7 @@ function updatePanel(tele = {}) {
   if (qs('cliff') && typeof tele.cliff === 'string') qs('cliff').textContent = tele.cliff;
 }
 
-// Poll sensors every second
-async function pollSensors() {
-  try {
-    const resp = await send('sensors');
-    if (resp && resp.ok) updatePanel(resp);
-  } catch {}
-  setTimeout(pollSensors, 1000);
-}
-
-// Bind arrows as buttons (mouse + touch)
+// Bind arrows as buttons (mouse + touch). Hold = move, release = stop.
 function bindArrowControls() {
   const bindHoldAction = (elId, onPress, onRelease) => {
     const el = document.getElementById(elId);
@@ -69,22 +60,6 @@ function bindArrowControls() {
   );
 }
 
-// WASD keys
-function bindKeyboard() {
-  document.addEventListener('keydown', async (e) => {
-    const k = e.key.toLowerCase();
-    if (k === 'w') { pressArrow('upArrow');    lastDirection='forward';  lastSpeed=40; await send('forward',  { speed: 40, angle: 0 }); }
-    if (k === 's') { pressArrow('downArrow');  lastDirection='backward'; lastSpeed=30; await send('backward', { speed: 30, angle: 0 }); }
-    if (k === 'a') { pressArrow('leftArrow');  lastDirection='left';     lastSpeed=35; await send('left',     { speed: 35 }); }
-    if (k === 'd') { pressArrow('rightArrow'); lastDirection='right';    lastSpeed=35; await send('right',    { speed: 35 }); }
-  });
-  document.addEventListener('keyup', async () => {
-    releaseArrows();
-    lastDirection='stopped'; lastSpeed=0;
-    await send('stop');
-  });
-}
-
 // Submit box:
 // - Clicking "Submit" or pressing Enter triggers update_data()
 // Supported commands: forward [speed], backward [speed], left, right, stop, sensors
@@ -108,7 +83,7 @@ async function update_data() {
       const info = document.getElementById('bluetooth');
       if (info) info.textContent = `Unknown command: ${text}`;
     }
-    // After any submit, read sensors once and refresh the labels:
+    // After any submit, read sensors once and refresh the labels (distance + cliff)
     const resp = await send('sensors');
     if (resp && resp.ok) updatePanel(resp);
   } catch (e) {
@@ -126,8 +101,6 @@ window.addEventListener('DOMContentLoaded', () => {
   });
 
   bindArrowControls();
-  bindKeyboard();
-  pollSensors();
 
   // Submit button
   const submitBtn = document.querySelector('button.btn.btn-success');
