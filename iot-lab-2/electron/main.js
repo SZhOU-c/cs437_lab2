@@ -1,91 +1,106 @@
-// Modules to control application life and create native browser window
-const {app, BrowserWindow} = require('electron')
+// main.js
+const { app, BrowserWindow, ipcMain } = require('electron');
+const path = require('path');
 const net = require('net');
-const path = require('path')
 
-const PI_IP = "192.168.0.134";
-const PI_PORT = 5555;
+// ── Configure your Pi's IP/port ───────────────────────────────────────────────
+const PI_IP = '192.168.0.134';   // <-- set to your Pi's IP
+const PI_PORT = 5555;            // must match server_tcp.py
+// ──────────────────────────────────────────────────────────────────────────────
 
+let win;
 let socket = null;
-
-function connectToPi() {
-  socket = net.createConnection({ host: PI_IP, port: PI_PORT }, () => {
-    console.log(`[TCP] Connected to Pi at ${PI_IP}:${PI_PORT}`);
-  });
-
-  socket.on("data", (buf) => {
-    const text = buf.toString("utf8").trim();
-    text.split("\n").forEach(line => {
-      if (!line) return;
-      try {
-        const data = JSON.parse(line);
-        console.log("[TCP RESP]", data);
-      } catch (e) {
-        console.log("[TCP RAW]", line);
-      }
-    });
-  });
-
-  socket.on("error", (err) => {
-    console.error("[TCP ERROR]", err.message);
-  });
-
-  socket.on("close", () => {
-    console.log("[TCP] Connection closed, retrying in 5s...");
-    setTimeout(connectToPi, 5000);
-  });
-}
-
-connectToPi();
-
-const { ipcMain } = require('electron');
-
-ipcMain.handle('pi-move', async (event, cmd, options = {}) => {
-  if (!socket) return { ok: false, error: 'No socket connection' };
-  const msg = JSON.stringify({ cmd, ...options }) + "\n";
-  socket.write(msg);
-  return { ok: true };
-});
-
+let buffer = '';
+const pending = [];   // FIFO of resolvers awaiting the next JSON line
 
 function createWindow () {
-  // Create the browser window.
-  const mainWindow = new BrowserWindow({
-    width: 1000,
-    height: 1000,
+  win = new BrowserWindow({
+    width: 1100,
+    height: 820,
     webPreferences: {
+      // Keeping these for simplicity with your current renderer code.
+      // If you want a safer setup later, switch to preload + contextIsolation.
       nodeIntegration: true,
-      preload: path.join(__dirname, 'preload.js')
+      contextIsolation: false,
+      preload: path.join(__dirname, 'preload.js') // ok if file doesn't exist
     }
-  })
-
-  // and load the index.html of the app.
-  mainWindow.loadFile('index.html')
-
-  // Open the DevTools.
-  // mainWindow.webContents.openDevTools()
+  });
+  win.loadFile(path.join(__dirname, 'index.html'));
 }
 
-// This method will be called when Electron has finished
-// initialization and is ready to create browser windows.
-// Some APIs can only be used after this event occurs.
+function connectToPi() {
+  if (socket) {
+    try { socket.destroy(); } catch {}
+    socket = null;
+  }
+
+  const s = net.createConnection({ host: PI_IP, port: PI_PORT }, () => {
+    console.log(`[TCP] Connected to ${PI_IP}:${PI_PORT}`);
+  });
+
+  s.setEncoding('utf8');
+
+  s.on('data', (chunk) => {
+    buffer += chunk;
+    let idx;
+    while ((idx = buffer.indexOf('\n')) >= 0) {
+      const line = buffer.slice(0, idx).trim();
+      buffer = buffer.slice(idx + 1);
+      if (!line) continue;
+
+      let payload = line;
+      try { payload = JSON.parse(line); } catch {}
+      console.log('[TCP RESP]', payload);
+
+      const resolve = pending.shift();
+      if (resolve) resolve(payload);
+    }
+  });
+
+  s.on('error', (err) => {
+    console.error('[TCP ERROR]', err.message);
+  });
+
+  s.on('close', () => {
+    console.log('[TCP] Closed. Flushing pending and retrying in 5s…');
+    while (pending.length) pending.shift()({ ok: false, error: 'socket_closed' });
+    setTimeout(connectToPi, 5000);
+  });
+
+  socket = s;
+}
+
+function sendAndWait(obj) {
+  return new Promise((resolve, reject) => {
+    if (!socket) return resolve({ ok: false, error: 'no_socket' });
+    try {
+      pending.push(resolve);
+      socket.write(JSON.stringify(obj) + '\n');
+    } catch (e) {
+      resolve({ ok: false, error: String(e.message || e) });
+    }
+  });
+}
+
+// IPC from renderer: invoke('pi-move', cmd, options)
+ipcMain.handle('pi-move', async (_event, cmd, options = {}) => {
+  // All commands (forward/backward/left/right/stop/sensors) go through here
+  const msg = { cmd, ...options };
+  return await sendAndWait(msg);
+});
+
+// ── App lifecycle ─────────────────────────────────────────────────────────────
 app.whenReady().then(() => {
-  createWindow()
-  
-  app.on('activate', function () {
-    // On macOS it's common to re-create a window in the app when the
-    // dock icon is clicked and there are no other windows open.
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
-  })
-})
+  createWindow();
+  connectToPi();
 
-// Quit when all windows are closed, except on macOS. There, it's common
-// for applications and their menu bar to stay active until the user quits
-// explicitly with Cmd + Q.
-app.on('window-all-closed', function () {
-  // if (process.platform !== 'darwin') app.quit()
-  app.quit()
-})
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  });
+});
 
-// In this file you can include the rest of your app's specific main process
-// code. You can also put them in separate files and require them here.
+app.on('window-all-closed', () => {
+  // quit on all platforms (change if you want macOS-style behavior)
+  if (socket) { try { socket.destroy(); } catch {} }
+  app.quit();
+});
