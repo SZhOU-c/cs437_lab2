@@ -1,65 +1,97 @@
 <!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="UTF-8">
-    <style>
-      .container{
-                  display: flex;
-                }
-    </style>
-    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css">
-    <script src="https://unpkg.com/sweetalert/dist/sweetalert.min.js"></script>
-    <script src="./index.js"></script>
-    
-  </head>
-
-  <body>
-    <div class="container">
-  
-      <div class="jumbotron">
-      <h2>CS498: IoT -- Lab 2</h2>
-
-      <!-- <video class="center" width="600" height="400" controls>
-        <source src="samplevid.mp4" type="video/mp4">
-          Your browser does not support the video tag.
-      </video> -->
-      <img src="./media/default_background.png" id='pics'>
-    </div> 
-  
-  </div>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>PiCar Remote</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: system-ui, Arial, sans-serif; margin: 16px; }
+    h1 { margin: 0 0 12px; font-size: 1.25rem; }
+    .row { display: flex; gap: 16px; flex-wrap: wrap; }
+    .card {
+      border: 1px solid #8883; border-radius: 12px; padding: 12px; min-width: 280px;
+      box-shadow: 0 1px 4px #0001; background: #fff0;
+    }
+    .controls { display: grid; grid-template-columns: 80px 80px 80px; gap: 8px; justify-content: center; }
+    .arrow {
+      user-select: none; text-align: center; font-size: 42px; padding: 8px 0;
+      border: 1px solid #8883; border-radius: 12px; color: grey; background: #f6f6f6;
+      transition: transform 80ms ease, background 80ms ease;
+    }
+    .arrow:active { transform: scale(0.98); background: #eaeaea; }
+    .arrow-label { font-size: 12px; color: #666; margin-top: -6px; text-align: center; grid-column: 1 / -1; }
+    .stats table { border-collapse: collapse; }
+    .stats td { padding: 4px 8px; }
+    .stats td:first-child { opacity: 0.7; }
+    .status { margin-top: 8px; font-size: 0.9rem; }
+    .danger { color: #b00020; font-weight: 600; }
+    .ok { color: #0a7d00; font-weight: 600; }
+    .btn { padding: 8px 14px; border-radius: 10px; border: 1px solid #0a7d00; background: #0a7d00; color: #fff; cursor: pointer; }
+    .btn.btn-success { background: #0a7d00; border-color: #0a7d00; }
+    .input-row { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+    #message { flex: 1; padding: 8px 10px; border-radius: 10px; border: 1px solid #8885; }
+    #cam { width: 480px; height: 360px; object-fit: cover; border-radius: 12px; border: 1px solid #8883; }
+    @media (max-width: 520px) { #cam { width: 100%; height: auto; } }
+  </style>
+</head>
+<body>
+  <h1>PiCar Remote</h1>
 
   <div class="row">
-    <div class="container">
-        <div class="jumbotron text-center col-md-6">
-            <span>&nbsp;&nbsp;</span> 
-            <span id="upArrow" style='font-size:50px; color:grey;'>&#8679;</span>
-            <br>
-            <span id="leftArrow" style='font-size:45px; color:grey;'>&#8678;</span>
-            <span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span> 
-            <span id="rightArrow" style='font-size:45px; color:grey;'>&#8680;</span>
-            <br>
-            <span>&nbsp;&nbsp;</span> 
-            <span id="downArrow" style='font-size:50px; color:grey;'>&#8681;</span>
-        </div>
-
-        <div class="jumbotron text-left col-md-6">
-        <input id="message" type="text" placeholder="message to Pi"/>
-        <button class="btn btn-success" onclick="update_data()">Sumbit</button>
-          <p>
-            <span id="direction_dot" style="color:Green">&bull;</span> Car Direction: <span id="direction"> </span>
-           <br>
-           <span id="speed_dot" style="color:green">&bull;</span> Speed: <span id="speed">0.0</span>  
-           <br>
-           <span id="distance_dot" style="color:green">&bull;</span> Distance Traveled: <span id="distance">0.0</span>
-           <br>
-           <span id="temprature_dot" style="color:green">&bull;</span> Temperature of the Pi: <span id="temperature">0.0</span>
-           <br>
-           Bluetooth return value: <span id="bluetooth"> </span>
-          </p>  
-        </div>
+    <!-- Camera stream -->
+    <div class="card">
+      <div style="margin-bottom:8px; opacity:.7;">Live Camera</div>
+      <!-- Replace <PI_IP> with your Pi's IP -->
+      <img id="cam" src="http://192.168.0.134:9000/mjpg" alt="Camera stream"/>
+      <div class="status" id="bluetooth"></div>
     </div>
-</div>
 
-  </body>
+    <!-- Controls -->
+    <div class="card" style="min-width:320px;">
+      <div style="margin-bottom:8px; opacity:.7;">Controls (click/touch or use WASD)</div>
+      <div class="controls">
+        <div></div>
+        <div id="upArrow" class="arrow">▲</div>
+        <div></div>
+
+        <div id="leftArrow" class="arrow">◀</div>
+        <div id="downArrow" class="arrow">▼</div>
+        <div id="rightArrow" class="arrow">▶</div>
+
+        <div class="arrow-label">Hold to move • release to stop</div>
+      </div>
+
+      <div class="input-row">
+        <input id="message" placeholder="e.g. forward 40 · left · sensors" />
+        <button class="btn btn-success">Submit</button>
+      </div>
+    </div>
+
+    <!-- Telemetry -->
+    <div class="card stats">
+      <div style="margin-bottom:8px; opacity:.7;">Telemetry</div>
+      <table>
+        <tr><td>Direction</td><td><span id="direction">stopped</span></td></tr>
+        <tr><td>Speed</td>    <td><span id="speed">0</span></td></tr>
+        <tr><td>Distance (cm)</td><td><span id="distance">-</span></td></tr>
+        <tr><td>Cliff</td>    <td><span id="cliff">unknown</span></td></tr>
+      </table>
+    </div>
+  </div>
+
+  <script src="./index.js"></script>
+  <script>
+    // Optional: colorize cliff value dynamically if index.js sets text only
+    const cliffEl = document.getElementById('cliff');
+    const observer = new MutationObserver(() => {
+      if (!cliffEl) return;
+      const v = (cliffEl.textContent || '').toLowerCase();
+      cliffEl.classList.remove('danger','ok');
+      if (v.includes('danger')) cliffEl.classList.add('danger');
+      if (v.includes('safe'))   cliffEl.classList.add('ok');
+    });
+    observer.observe(cliffEl, { childList: true, characterData: true, subtree: true });
+  </script>
+</body>
 </html>
-
